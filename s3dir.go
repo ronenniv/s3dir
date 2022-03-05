@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/ronenniv/s3dir/buckets"
+	"github.com/ronenniv/s3dir/objects"
 )
 
 type S3Client struct {
@@ -34,25 +37,26 @@ func (s *S3Client) connect() error {
 	return nil
 }
 
-func (s *S3Client) listObjects(bucketName string) {
+func (s *S3Client) listBuckets() (*buckets.BucketList, error) {
+	var bl buckets.BucketList
+	input, err := s.clientData.ListBuckets(s.ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("got error in receiving list of buckets: %w", err)
+	}
+	bl.Buckets = input.Buckets
+
+	return &bl, nil
+}
+
+func (s *S3Client) listObjects(bucketName string) (*objects.BucketObjects, error) {
+	var bo objects.BucketObjects
 	input, err := s.clientData.ListObjectsV2(s.ctx, &s3.ListObjectsV2Input{Bucket: &bucketName})
 	if err != nil {
-		fmt.Println("Got error retrieving list of objects:")
-		fmt.Println(err)
-		return
+		return nil, fmt.Errorf("got error retrieving list of objects: %w", err)
 	}
+	bo.Objects = input.Contents
 
-	fmt.Println("Objects in " + bucketName + ":")
-
-	for _, item := range input.Contents {
-		fmt.Println("Name:          ", *item.Key)
-		fmt.Println("Last modified: ", *item.LastModified)
-		fmt.Println("Size:          ", item.Size)
-		fmt.Println("Storage class: ", item.StorageClass)
-		fmt.Println("")
-	}
-
-	fmt.Println("Found", len(input.Contents), "items in bucket", bucketName)
+	return &bo, nil
 }
 
 func main() {
@@ -62,6 +66,12 @@ func main() {
 	if err := s3client.connect(); err != nil {
 		log.Fatal(err)
 	}
-	s3client.listObjects("elasticbeanstalk-us-east-1-899792839109")
+	buckets, _ := s3client.listBuckets()
+	buckets.PrintShort(os.Stdout)
+	buckets.PrintLong(os.Stdout)
+
+	obj, _ := s3client.listObjects("tess-qa-checks")
+	obj.PrintShort(os.Stdout)
+	obj.PrintLong(os.Stdout)
 
 }
