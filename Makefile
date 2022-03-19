@@ -1,4 +1,4 @@
-.PHONY: install test clean goimports govet golint docker-build docker-push cover
+.PHONY: install test clean linter goimports govet golint docker-build docker-push cover
 
 install:
 	go build -v ./...
@@ -8,6 +8,9 @@ test:
 
 clean:
 	go clean
+
+linter:
+	docker run --rm -v $(PWD):/app -w /app golangci/golangci-lint:v1.42.1 golangci-lint run -v
 
 goimports:
 	go get golang.org/x/tools/cmd/goimports
