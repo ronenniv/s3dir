@@ -19,15 +19,34 @@ type S3Client struct {
 	ctx        context.Context
 }
 
-func New() *S3Client {
+func NewS3Client() *S3Client {
 	s := S3Client{
 		ctx: context.Background(),
 	}
 	return &s
 }
 
+const awsEndpoint = "http://localhost:4566"
+const awsRegion = "us-east-1"
+
 func (s *S3Client) Connect() error {
-	cfg, err := config.LoadDefaultConfig(s.ctx)
+	customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+		if awsEndpoint != "" {
+			return aws.Endpoint{
+				PartitionID:   "aws",
+				URL:           awsEndpoint,
+				SigningRegion: awsRegion,
+			}, nil
+		}
+
+		// returning EndpointNotFoundError will allow the service to fallback to it's default resolution
+		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+	})
+	cfg, err := config.LoadDefaultConfig(s.ctx,
+		// config.WithRegion(awsRegion),
+		config.WithSharedConfigProfile("localstack"),
+		config.WithEndpointResolver(customResolver),
+	)
 	if err != nil {
 		err = fmt.Errorf("in connect(): %w", err)
 		return err
@@ -39,11 +58,12 @@ func (s *S3Client) Connect() error {
 
 func (s *S3Client) ListBuckets() (*buckets.BucketList, error) {
 	var bl buckets.BucketList
+
 	input, err := s.clientData.ListBuckets(s.ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("got error in receiving list of buckets: %w", err)
 	}
-	bl.Buckets = input.Buckets
+	bl.CopyAWSBucketListToBucketList(input.Buckets)
 
 	return &bl, nil
 }
@@ -57,11 +77,9 @@ func (s *S3Client) ListObjects(bucketName string) (*objects.BucketObjects, error
 		if errors.As(err, &nsb) {
 			msg := fmt.Sprintf("%s: %s", bucketName, nsb.ErrorCode())
 			bo.ErrMsg = &msg
-			return &bo, nil
 		} else {
 			return nil, fmt.Errorf("got error retrieving list of objects: %w", err)
 		}
-
 	}
 	bo.Objects = input.Contents
 

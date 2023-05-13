@@ -1,24 +1,33 @@
 package buckets
 
 import (
-	"fmt"
-	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+type Bucket struct {
+	Name         string
+	CreationDate time.Time
+}
+
+func CopyAWSBucketToBucket(bucket types.Bucket) Bucket {
+	b := Bucket{}
+	b.Name = *bucket.Name
+	b.CreationDate = *bucket.CreationDate
+	return b
+}
+
 type BucketList struct {
-	Buckets []types.Bucket
+	Buckets []Bucket
 }
 
-func (bl *BucketList) PrintShort(w io.Writer) {
-	for _, bucket := range bl.Buckets {
-		fmt.Fprint(w, *bucket.Name, "\n")
+func (bl *BucketList) CopyAWSBucketListToBucketList(bucketList []types.Bucket) {
+	for _, bucket := range bucketList {
+		bl.Buckets = append(bl.Buckets, CopyAWSBucketToBucket(bucket))
 	}
 }
 
-func (bl *BucketList) PrintLong(w io.Writer) {
-	for _, bucket := range bl.Buckets {
-		fmt.Fprintf(w, "%s\t%s\n", *bucket.CreationDate, *bucket.Name)
-	}
+func (bl BucketList) Len() int {
+	return len(bl.Buckets)
 }
