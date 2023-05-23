@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -14,52 +15,30 @@ import (
 )
 
 type S3Client struct {
-	clientData *s3.Client
-	cfg        *aws.Config
-	ctx        context.Context
+	client *s3.Client
+	cfg    *aws.Config
 }
 
 func NewS3Client() *S3Client {
-	s := S3Client{
-		ctx: context.Background(),
-	}
-	return &s
+	return &S3Client{}
 }
 
-const awsEndpoint = "http://localhost:4566"
-const awsRegion = "us-east-1"
-
 func (s *S3Client) Connect() error {
-	customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
-		if awsEndpoint != "" {
-			return aws.Endpoint{
-				PartitionID:   "aws",
-				URL:           awsEndpoint,
-				SigningRegion: awsRegion,
-			}, nil
-		}
-
-		// returning EndpointNotFoundError will allow the service to fallback to it's default resolution
-		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
-	})
-	cfg, err := config.LoadDefaultConfig(s.ctx,
-		// config.WithRegion(awsRegion),
-		config.WithSharedConfigProfile("localstack"),
-		config.WithEndpointResolver(customResolver),
-	)
+	cfg, err := config.LoadDefaultConfig(context.Background()) // config.WithRegion(awsRegion),
+	// config.WithSharedConfigProfile("rniv"),
 	if err != nil {
-		err = fmt.Errorf("in connect(): %w", err)
 		return err
 	}
 	s.cfg = &cfg
-	s.clientData = s3.NewFromConfig(cfg)
+	s.client = s3.NewFromConfig(cfg)
 	return nil
 }
 
+// ListBuckets return the list of all buckets
 func (s *S3Client) ListBuckets() (*buckets.BucketList, error) {
 	var bl buckets.BucketList
 
-	input, err := s.clientData.ListBuckets(s.ctx, &s3.ListBucketsInput{})
+	input, err := s.client.ListBuckets(context.Background(), &s3.ListBucketsInput{})
 	if err != nil {
 		return nil, fmt.Errorf("got error in receiving list of buckets: %w", err)
 	}
@@ -68,10 +47,15 @@ func (s *S3Client) ListBuckets() (*buckets.BucketList, error) {
 	return &bl, nil
 }
 
-func (s *S3Client) ListObjects(bucketName string) (*objects.BucketObjects, error) {
-	var bo objects.BucketObjects
+// ListObjects will return list of all objects in bucketName
+func (s *S3Client) ListObjects(bucketName string, prefix string) (*objects.Objects, error) {
+	var bo objects.Objects
 
-	input, err := s.clientData.ListObjectsV2(s.ctx, &s3.ListObjectsV2Input{Bucket: &bucketName})
+	input, err := s.client.ListObjectsV2(context.Background(), &s3.ListObjectsV2Input{
+		Bucket:    aws.String(bucketName),
+		Prefix:    aws.String(".git/"),
+		Delimiter: aws.String("/"),
+	})
 	if err != nil {
 		var nsb *types.NoSuchBucket
 		if errors.As(err, &nsb) {
@@ -81,6 +65,8 @@ func (s *S3Client) ListObjects(bucketName string) (*objects.BucketObjects, error
 			return nil, fmt.Errorf("got error retrieving list of objects: %w", err)
 		}
 	}
+
+	log.Printf("keycount %v commonprefix %#v input %#v\n", input.KeyCount, input.CommonPrefixes, input)
 	bo.Objects = input.Contents
 
 	return &bo, nil

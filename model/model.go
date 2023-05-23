@@ -1,10 +1,10 @@
 package model
 
 import (
-	"fmt"
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/ronenniv/s3dir/s3client"
 )
 
@@ -13,13 +13,40 @@ const (
 	objectScreen
 )
 
-type ModelView struct {
-	currentScreen int // bucket or objects screen
-	bucketView    *BucketView
-	ObjectView    *ObjectView
-	s3            *s3client.S3Client
+type View interface {
+	tea.Model
+	Len() int
+	CursorUp()
+	CursorDown()
+	SetWindowHeight(height int)
+	GetCursorItemName() string
 }
 
+type ViewWindow struct {
+	top    int
+	bottom int
+}
+
+type ModelView struct {
+	currentScreen int // bucket or objects screen
+	view          View
+	windowHeight  int
+	// bucketView    *BucketView
+	// ObjectView    *ObjectView
+	s3 *s3client.S3Client
+}
+
+var (
+	titleStyle         = lipgloss.NewStyle().Bold(true)
+	itemStyle          = lipgloss.NewStyle().Align(lipgloss.Left)
+	selectedItemStyle  = itemStyle.Copy().Bold(true)
+	statusMessageStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#bfbfbf", Dark: "#727272"})
+)
+
+// InitialModel will init the model based on bucketName
+// when bucketName is empty, it will init the buckets list
+// when bucketName is provided, it will init with the objects in the bucket
 func InitialModel(bucketName string) ModelView {
 	mv := ModelView{currentScreen: bucketScreen}
 	mv.s3 = s3client.NewS3Client()
@@ -29,21 +56,26 @@ func InitialModel(bucketName string) ModelView {
 
 	if bucketName == "" {
 		mv.currentScreen = bucketScreen
-		mv.bucketView = InitialBuckets(mv.s3)
+		mv.view = InitialBuckets(mv.s3)
 	} else {
 		mv.currentScreen = objectScreen
-		mv.ObjectView = InitialObjects(bucketName, mv.s3)
+		mv.view = InitialObjects(bucketName, " ", mv.s3)
 	}
 	return mv
 }
 
 func (mv ModelView) Init() tea.Cmd {
-	// Just return `nil`, which means "no I/O right nowq, please."
+	// Just return `nil`, which means "no I/O right now"
 	return nil
 }
 
 func (mv ModelView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		log.Println("Update: WindowSizeMsg", msg.Height)
+		mv.windowHeight = msg.Height
+		mv.view.SetWindowHeight(mv.windowHeight - 4)
 
 	// Is it a key press?
 	case tea.KeyMsg:
@@ -55,30 +87,21 @@ func (mv ModelView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return mv, tea.Quit
 		case "down":
-			if mv.cursor < mv.choices.Len()-1 {
-				mv.cursor++
-			}
+			mv.view.CursorDown()
 		case "up":
-			if mv.cursor > 0 {
-				mv.cursor--
-			}
+			mv.view.CursorUp()
+		case "enter":
+			mv.currentScreen = objectScreen
+			mv.view = InitialObjects(mv.view.GetCursorItemName(), "", mv.s3)
 		}
 	}
 	return mv, nil
 }
 
 func (mv ModelView) View() string {
-	// s := titleStyle.Render(fmt.Sprintf("%6s %10s %5s %6s\n\n", "", "Name", "Size", "Dir"))
-	s := "Buckets\n"
-	for i, object := range mv.choices.Objects {
-		if i == mv.cursor {
-			s += selectedItemStyle.Render(fmt.Sprintf("%-15s", *object.Key)) + selectedItemStyle.Render(fmt.Sprintf("%-6d", object.Size), selectedItemStyle.Render(fmt.Sprintf("%-6s", object.LastModified)))
-			s += "\n"
-		} else {
-			s += itemStyle.Render(fmt.Sprintf("%-15s", *object.Key)) + itemStyle.Render(fmt.Sprintf("%-6d", object.Size), itemStyle.Render(fmt.Sprintf("%-6s", object.LastModified)))
-			s += "\n"
-		}
-	}
-	s += "\nPress q to quit.\n"
+	s := mv.view.View()
+	s += "\n"
+	s += statusMessageStyle.Render("(q) quit")
+	s += "\n"
 	return s
 }

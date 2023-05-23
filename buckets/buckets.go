@@ -11,15 +11,15 @@ type Bucket struct {
 	CreationDate time.Time
 }
 
+type BucketList struct {
+	Buckets []Bucket
+}
+
 func CopyAWSBucketToBucket(bucket types.Bucket) Bucket {
 	b := Bucket{}
 	b.Name = *bucket.Name
 	b.CreationDate = *bucket.CreationDate
 	return b
-}
-
-type BucketList struct {
-	Buckets []Bucket
 }
 
 func (bl *BucketList) CopyAWSBucketListToBucketList(bucketList []types.Bucket) {
